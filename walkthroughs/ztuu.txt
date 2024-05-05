@@ -1,0 +1,84 @@
+ne
+examine boulders
+ne
+n
+nw
+talk to man
+take mask
+n
+wear fish
+wear fur
+wear razor
+s
+take rune
+take gores
+take implementeers
+take zm$100000
+se
+drop lamp
+n
+take glasses
+s
+remove mask
+remove suit
+drop mask
+drop suit
+take lamp
+s
+e
+e
+take blue
+take red
+hit lamp
+put blue in glasses
+put red in glasses
+east
+open trunk
+take coin
+w
+w
+w
+s
+n
+drop rune
+s
+drop gores
+s
+examine tree
+examine ball
+take tinsel
+examine coin
+tie tinsel to coin
+n
+e
+put coin in slot
+pull tinsel
+put coin in slot
+w
+w
+pry sixth rib with sword
+sw
+take can
+ne
+e
+s
+shake lamp
+wear glasses
+drop all
+open lid
+push button
+examine symbols
+take all
+put flathead on circle
+put tree on square
+put house on triangle
+put balloon on pentagon
+drop zm$100000
+se
+drop multi
+nw
+n
+n
+sw
+wait
+sw
