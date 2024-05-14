@@ -215,8 +215,7 @@ class TrajectoryGenerator:
                     file.write(">New trajectory\n")
                     for reward, observation, action, info in trajectory:
                         file.write("----------------------------------------------------------------------------------------------------\n")
-                        file.write(f"$Reward: {reward}\n$Msg: {observation['msg']}\n$Hints: {observation['hints']}\n$Player-Location: \
-                                   {observation['ploc']}\n$Inventory: {observation['inv']}\n$Action: {action}\n$Info: {info}\n")
+                        file.write(f"$Reward: {reward}\n$Msg: {observation['msg']}\n$Hints: {observation['hints']}\n$Player-Location: {observation['ploc']}\n$Inventory: {observation['inv']}\n$Action: {action}\n$Info: {info}\n")
                         file.write("----------------------------------------------------------------------------------------------------\n")
                     file.write("\n\n")
 
