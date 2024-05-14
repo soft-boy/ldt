@@ -7,7 +7,7 @@ import time
 import pickle
 
 class TrajectoryGenerator:
-    def __init__(self, game_file_path, num_random_steps, num_repeats, num_seeds, output_file, gold_trajectory_only=False):
+    def __init__(self, game_file_path, num_random_steps, num_repeats, num_seeds, output_file, cache_file_dir="", gold_trajectory_only=False):
         self.game_file_path = game_file_path
         self.output_file = output_file
 
@@ -15,7 +15,7 @@ class TrajectoryGenerator:
         self.num_repeats = num_repeats
         self.num_seeds = num_seeds
         
-        self.percentages = list(range(0, 100, 5))
+        self.percentages = list(range(0, 101, 5))
         self.gold_trajectory_only = gold_trajectory_only
         self.trajectories = []
 
@@ -24,42 +24,64 @@ class TrajectoryGenerator:
         self.walkthrough = self.env.get_walkthrough()
         
         # Initialize the cache
+        self.is_cache_save_required = False
         self.action_cache = {}
-        self.cache_file = f"{os.path.splitext(os.path.basename(self.game_file_path))[0]}_cache.pkl"
+        self.cache_file = os.path.join(cache_file_dir, f"{os.path.splitext(os.path.basename(self.game_file_path))[0]}_valid_action_list_cache.pkl")
         self.load_cache()
+
+        # Initialize the state and reward
+        self.state = None
+        self.info = None
+        self.reward = None
 
     def load_cache(self):
         if os.path.exists(self.cache_file):
             with open(self.cache_file, 'rb') as f:
                 self.action_cache = pickle.load(f)
-                print(f"Cache loaded from {self.cache_file}")
+                print(f"[SUCCESS] Cache loaded from {self.cache_file}")
+                print("Number of cached states:", len(self.action_cache))
+                print() # empty line
+        else:
+            print(f"[WARNING] Cache file not found, new cache file will be created in {self.cache_file}")
+            print(f"Cache file: {self.cache_file}\n")
 
     def save_cache(self):
+        if not self.is_cache_save_required:
+            print("No cache save required")
+            return
         with open(self.cache_file, 'wb') as f:
             pickle.dump(self.action_cache, f)
-            print(f"Cache saved to {self.cache_file}")
+            print(f"Cache updated and saved")
 
+    def reset_env(self, seed=None):
+        self.reward = 0
+        self.state, self.info  = self.env.reset()
+        self.env.seed(seed)
+        
     def run(self):
-        print("Running on a single core.")
+        seeds = [i for i in range(0, self.num_seeds)]
+        seeds[0] = self.env.bindings['seed'] # seed for the golden path
 
-        seeds = [i for i in range(1, self.num_seeds + 1)]
+        print("Using the following seeds:", seeds)
+        print("Golden path seed:", seeds[0])
         
         for seed in seeds:
-            print(f"Generating trajectories for seed {seed}")
+            print(f"\nGenerating trajectories for seed: {seed}")
             result = self.generate_trajectories_for_seed(seed)
             self.trajectories.extend(result)
 
         # Save the generated trajectories
         self.save_trajectories()
-        print(f"Trajectories saved to {self.output_file}")
+        print(f"\n[SUCCESS] Trajectories saved to {self.output_file}")
 
     def get_cached_valid_actions(self):
         state_hash = self.env.get_world_state_hash()
         if state_hash not in self.action_cache:
             self.action_cache[state_hash] = self.env.get_valid_actions(use_parallel=True)
+            self.is_cache_save_required = True
         return self.action_cache[state_hash]
 
-    def record_step(self, action, trajectory):
+    def take_record_step(self, action, trajectory):
         """
         Execute an action in the environment and record the step.
         
@@ -67,14 +89,20 @@ class TrajectoryGenerator:
         :param trajectory: List to append the step information.
         :return: Tuple (done, reward).
         """
-        state, reward, done, info = self.env.step(action)
-        # print(action)
+        hints = self.get_cached_valid_actions()
+        next_state, next_reward, done, next_info = self.env.step(action)
         observation = {
-            "cand": self.get_cached_valid_actions(),
-            "msg": state
+            "msg": self.state,
+            "hints": hints,
         }
-        trajectory.append((observation, reward, action))
-        return done, reward
+        trajectory.append((observation, action, self.reward, self.info))
+        
+        # Update the state and reward
+        self.state = next_state
+        self.reward = next_reward
+        self.info = next_info
+
+        return done
 
     def follow_walkthrough(self, num_steps_to_follow):
         """
@@ -87,28 +115,27 @@ class TrajectoryGenerator:
         trajectory = []
         for step in range(num_steps_to_follow):
             action = self.walkthrough[step]
-            done, _ = self.record_step(action, trajectory)
+            done = self.take_record_step(action, trajectory)
             if done:
                 break
         return trajectory, done
 
-    def take_random_steps(self, num_random_steps, trajectory):
+    def take_random_steps(self):
         """
         Take random steps in the environment.
-        
-        :param num_random_steps: Number of random steps to take.
+
         :param trajectory: List to append the random step information.
         :return: List of recorded steps.
         """
         done = False
-        for _ in range(num_random_steps):
+        trajectory = []
+        for _ in range(self.num_random_steps):
             actions_list = self.get_cached_valid_actions()
             if len(actions_list) == 0:
-                print("should not happen")
-                print("No valid actions found.")
-                # print(self.env.)
+                actions_list.append("QUIT")
+                print("[WARNING] Manual action added: QUIT")
             random_action = random.choice(actions_list)
-            done, _ = self.record_step(random_action, trajectory)
+            done = self.take_record_step(random_action, trajectory)
             if done:
                 break
         return trajectory, done
@@ -123,33 +150,42 @@ class TrajectoryGenerator:
         trajectories = []
 
         # Append the golden trajectory
-        np.random.seed(seed)
-        random.seed(seed)
-        self.env.reset()
-        print(f"Generating golden trajectory for seed {seed}")
-        start_time = time.time()
-        golden_trajectory, done = self.follow_walkthrough(len(self.walkthrough))
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        print(f"Golden trajectory generated in {elapsed_time:.2f} seconds")
-        trajectories.append(golden_trajectory)
-        self.save_cache()
         if self.gold_trajectory_only:
+            self.reset_env(seed)
+            start_time = time.time()
+            golden_trajectory, done = self.follow_walkthrough(len(self.walkthrough))
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            print(f"Golden trajectory (for seed: {seed}) generated in {elapsed_time:.2f} s,", \
+                golden_trajectory[-1][-1], \
+                end=", ")
+            trajectories.append(golden_trajectory)
+            self.save_cache()
+
             return trajectories
 
-        total_iterations = len(self.percentages) * self.num_repeats
         count = 1
+        total_iterations = len(self.percentages) * self.num_repeats
         for percentage in self.percentages:
             num_steps_to_follow = int(len(self.walkthrough) * (percentage / 100.0))
             for _ in range(self.num_repeats):
-                self.env.reset()
+                self.reset_env(seed)
+                walkthrough_trajectory, random_trajectory  = [], []
+
                 start_time = time.time()
-                trajectory, done = self.follow_walkthrough(num_steps_to_follow)
+                walkthrough_trajectory, done = self.follow_walkthrough(num_steps_to_follow)
                 if not done:
-                    trajectory, done = self.take_random_steps(self.num_random_steps, trajectory)
+                    random.seed(seed)   # seed random number generator
+                    random_trajectory, done = self.take_random_steps()
                 end_time = time.time()
                 elapsed_time = end_time - start_time
-                print(f"Trajectory {count}/{total_iterations} generated in {elapsed_time:.2f} seconds")
+
+                trajectory = walkthrough_trajectory + random_trajectory
+                print(f"(Seed: {seed}) Trajectory {count}/{total_iterations} generated in {elapsed_time:.2f} s,", \
+                      f"gold steps ({percentage}%): {len(walkthrough_trajectory)}, rand steps: {len(random_trajectory)},", \
+                      trajectory[-1][-1], \
+                      end=", ")
+                
                 count += 1
                 trajectories.append(trajectory)
                 self.save_cache()
@@ -162,14 +198,15 @@ class TrajectoryGenerator:
         """
         with open(self.output_file, 'w') as file:
             for trajectory in self.trajectories:
-                for observation, reward, action in trajectory:
-                    file.write(f"{observation}\t{reward}\t{action}\n")
+                for observation, action, reward, info in trajectory:
+                    file.write(f"{observation}\t{action}\t{reward}\t{info}\n\n")
                 file.write("\n")  # Separate trajectories by a newline
 
 def main():
     parser = argparse.ArgumentParser(description='Generate training data for Jericho games.')
     parser.add_argument('-i', '--game_file', type=str, default="z-machine-games-master/jericho-game-suite/enchanter.z3", help='Path to the game file.')
     parser.add_argument('-o', '--output_file', type=str, default='trajectories.txt', help='Output file name for the trajectories.')
+    parser.add_argument('-c', '--cache_file_dir', type=str, default='.env', help='Directory to save the valid action list cache file.')
     parser.add_argument('-s', '--num_seeds', type=int, default=5, help='Number of seeds for environment initialization.')
     parser.add_argument('-r', '--num_repeats', type=int, default=10, help='Number of repeats for each percentage of steps.')
     parser.add_argument('--num_random_steps', type=int, default=100, help='Number of random steps to take after following the walkthrough.')
@@ -183,9 +220,13 @@ def main():
         num_repeats=args.num_repeats,
         num_seeds=args.num_seeds,
         output_file=args.output_file,
+        cache_file_dir=args.cache_file_dir,
         gold_trajectory_only=args.gold
     )
     generator.run()
 
 if __name__ == "__main__":
     main()
+
+
+# copy command: scp ./generate_trajectory.py flip:~/final-project/ldt
