@@ -91,11 +91,14 @@ class TrajectoryGenerator:
         :return: Tuple (done, reward).
         """
         hints = self.get_cached_valid_actions()
+        if len(hints) == 0:
+            action = "QUIT"
+            
         observation = {
             "msg": self.state,
             "hints": hints,
-            "ploc": self.env.get_player_location().name,
-            "inv": list(map(lambda x: x.name, self.env.get_inventory()))
+            "ploc": self.env.get_player_location().name if self.env.get_player_location() else None,
+            "inv": list(map(lambda x: x.name, self.env.get_inventory())) if self.env.get_inventory() else None
         }
         trajectory.append((self.reward, observation, action, self.info))
 
