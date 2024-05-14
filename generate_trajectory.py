@@ -93,7 +93,7 @@ class TrajectoryGenerator:
         hints = self.get_cached_valid_actions()
         if len(hints) == 0:
             action = "QUIT"
-            
+
         observation = {
             "msg": self.state,
             "hints": hints,
@@ -102,8 +102,18 @@ class TrajectoryGenerator:
         }
         trajectory.append((self.reward, observation, action, self.info))
 
+        if action == "QUIT":
+            return True
+
         # Take a step in the environment
         self.state, self.reward, done, self.info = self.env.step(action)
+        if done:
+            trajectory.append((self.reward, {
+                "msg": self.state,
+                "hints": None,
+                "ploc": None,
+                "inv": None,
+            }, "QUIT", self.info))
     
         return done
 
