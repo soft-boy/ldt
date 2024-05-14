@@ -91,18 +91,17 @@ class TrajectoryGenerator:
         :return: Tuple (done, reward).
         """
         hints = self.get_cached_valid_actions()
-        next_state, next_reward, done, next_info = self.env.step(action)
         observation = {
             "msg": self.state,
             "hints": hints,
+            "ploc": self.env.get_player_location().name,
+            "inv": list(map(lambda x: x.name, self.env.get_inventory()))
         }
-        trajectory.append((observation, action, self.reward, self.info))
-        
-        # Update the state and reward
-        self.state = next_state
-        self.reward = next_reward
-        self.info = next_info
+        trajectory.append((self.reward, observation, action, self.info))
 
+        # Take a step in the environment
+        self.state, self.reward, done, self.info = self.env.step(action)
+    
         return done
 
     def follow_walkthrough(self, num_steps_to_follow):
@@ -200,8 +199,8 @@ class TrajectoryGenerator:
         with open(text_output_file, 'w') as file:
             for _, trajectories in self.trajectories.items():
                 for trajectory in trajectories:
-                    for observation, action, reward, info in trajectory:
-                        file.write(f"{observation['msg']}\t{observation['hints']}\t{action}\t{reward}\t{info}\n\n")
+                    for reward, observation, action, info in trajectory:
+                        file.write(f"{reward}\t{observation['msg']}\t{observation['hints']}\t{action}\t{info}\n\n")
                     file.write("\n")
 
         # save to pickle file
