@@ -164,17 +164,16 @@ class TrajectoryGenerator:
             return trajectories
 
         count = 1
-        total_iterations = len(self.percentages) * self.num_repeats
+        total_iterations = (len(self.percentages) - 1) * self.num_repeats + 1
         for percentage in self.percentages:
             num_steps_to_follow = int(len(self.walkthrough) * (percentage / 100.0))
-            for _ in range(self.num_repeats):
+            for _ in range(self.num_repeats if percentage < 100 else 1):
                 self.reset_env(seed)
                 walkthrough_trajectory, random_trajectory  = [], []
 
                 start_time = time.time()
                 walkthrough_trajectory, done = self.follow_walkthrough(num_steps_to_follow)
                 if not done:
-                    random.seed(seed)   # seed random number generator
                     random_trajectory, done = self.take_random_steps()
                 end_time = time.time()
                 elapsed_time = end_time - start_time
