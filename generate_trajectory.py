@@ -2,7 +2,6 @@ import jericho
 import random
 import os
 import argparse
-import numpy as np
 import time
 import pickle
 
