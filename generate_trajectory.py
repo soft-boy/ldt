@@ -5,10 +5,12 @@ import argparse
 import time
 import pickle
 
+from collections import defaultdict
+
 class TrajectoryGenerator:
-    def __init__(self, game_file_path, num_random_steps, num_repeats, num_seeds, output_file, cache_file_dir="", gold_trajectory_only=False):
+    def __init__(self, game_file_path, num_random_steps, num_repeats, num_seeds, output_dir, cache_dir="", gold_trajectory_only=False):
         self.game_file_path = game_file_path
-        self.output_file = output_file
+        self.output_dir = output_dir
 
         self.num_random_steps = num_random_steps
         self.num_repeats = num_repeats
@@ -16,7 +18,7 @@ class TrajectoryGenerator:
         
         self.percentages = list(range(0, 101, 5))
         self.gold_trajectory_only = gold_trajectory_only
-        self.trajectories = []
+        self.trajectories = defaultdict(list)
 
         # Initialize the environment and get the walkthrough
         self.env = jericho.FrotzEnv(self.game_file_path)
@@ -25,7 +27,9 @@ class TrajectoryGenerator:
         # Initialize the cache
         self.is_cache_save_required = False
         self.action_cache = {}
-        self.cache_file = os.path.join(cache_file_dir, f"{os.path.splitext(os.path.basename(self.game_file_path))[0]}_valid_action_list_cache.pkl")
+        if not os.path.exists(cache_dir):
+            os.makedirs(cache_dir)
+        self.cache_file = os.path.join(cache_dir, f"{os.path.splitext(os.path.basename(self.game_file_path))[0]}_valid_action_list_cache.pkl")
         self.load_cache()
 
         # Initialize the state and reward
@@ -66,12 +70,10 @@ class TrajectoryGenerator:
         
         for seed in seeds:
             print(f"\nGenerating trajectories for seed: {seed}")
-            result = self.generate_trajectories_for_seed(seed)
-            self.trajectories.extend(result)
+            self.generate_trajectories_for_seed(seed)
 
         # Save the generated trajectories
         self.save_trajectories()
-        print(f"\n[SUCCESS] Trajectories saved to {self.output_file}")
 
     def get_cached_valid_actions(self):
         state_hash = self.env.get_world_state_hash()
@@ -146,8 +148,6 @@ class TrajectoryGenerator:
         :param seed: Seed for environment initialization.
         :return: List of generated trajectories.
         """
-        trajectories = []
-
         # Append the golden trajectory
         if self.gold_trajectory_only:
             self.reset_env(seed)
@@ -158,11 +158,10 @@ class TrajectoryGenerator:
             print(f"Golden trajectory (for seed: {seed}) generated in {elapsed_time:.2f} s,", \
                 golden_trajectory[-1][-1], \
                 end=", ")
-            trajectories.append(golden_trajectory)
             self.save_cache()
-
-            return trajectories
-
+            self.trajectories[(seed, 100)].append(golden_trajectory)
+            return
+            
         count = 1
         total_iterations = (len(self.percentages) - 1) * self.num_repeats + 1
         for percentage in self.percentages:
@@ -185,26 +184,38 @@ class TrajectoryGenerator:
                       end=", ")
                 
                 count += 1
-                trajectories.append(trajectory)
                 self.save_cache()
-
-        return trajectories
+                self.trajectories[(seed, percentage)].append(trajectory)
+                
 
     def save_trajectories(self):
         """
         Save trajectories to a file.
         """
-        with open(self.output_file, 'w') as file:
-            for trajectory in self.trajectories:
-                for observation, action, reward, info in trajectory:
-                    file.write(f"{observation}\t{action}\t{reward}\t{info}\n\n")
-                file.write("\n")  # Separate trajectories by a newline
+        if not os.path.exists(self.output_dir):
+            os.makedirs(self.output_dir)
+
+        # save to text file
+        text_output_file = os.path.join(self.output_dir, f"{os.path.splitext(os.path.basename(self.game_file_path))[0]}.txt")
+        with open(text_output_file, 'w') as file:
+            for _, trajectories in self.trajectories.items():
+                for trajectory in trajectories:
+                    for observation, action, reward, info in trajectory:
+                        file.write(f"{observation['msg']}\t{observation['hints']}\t{action}\t{reward}\t{info}\n\n")
+                    file.write("\n")
+
+        # save to pickle file
+        pickle_output_file = os.path.join(self.output_dir, f"{os.path.splitext(os.path.basename(self.game_file_path))[0]}.pkl")
+        with open(pickle_output_file, 'wb') as file:
+            pickle.dump(self.trajectories, file)
+
+        print(f"\n[SUCCESS] Trajectories saved to {text_output_file} and {pickle_output_file}")
 
 def main():
     parser = argparse.ArgumentParser(description='Generate training data for Jericho games.')
     parser.add_argument('-i', '--game_file', type=str, default="z-machine-games-master/jericho-game-suite/enchanter.z3", help='Path to the game file.')
-    parser.add_argument('-o', '--output_file', type=str, default='trajectories.txt', help='Output file name for the trajectories.')
-    parser.add_argument('-c', '--cache_file_dir', type=str, default='.env', help='Directory to save the valid action list cache file.')
+    parser.add_argument('-o', '--output_dir', type=str, default='trajectories', help='Directory to save the generated trajectories.')
+    parser.add_argument('-c', '--cache_dir', type=str, default='.env', help='Directory to save the valid action list cache file.')
     parser.add_argument('-s', '--num_seeds', type=int, default=5, help='Number of seeds for environment initialization.')
     parser.add_argument('-r', '--num_repeats', type=int, default=10, help='Number of repeats for each percentage of steps.')
     parser.add_argument('--num_random_steps', type=int, default=100, help='Number of random steps to take after following the walkthrough.')
@@ -217,8 +228,8 @@ def main():
         num_random_steps=args.num_random_steps,
         num_repeats=args.num_repeats,
         num_seeds=args.num_seeds,
-        output_file=args.output_file,
-        cache_file_dir=args.cache_file_dir,
+        output_dir=args.output_dir,
+        cache_dir=args.cache_dir,
         gold_trajectory_only=args.gold
     )
     generator.run()
