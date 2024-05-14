@@ -212,12 +212,12 @@ class TrajectoryGenerator:
         with open(text_output_file, 'w') as file:
             for _, trajectories in self.trajectories.items():
                 for trajectory in trajectories:
+                    file.write(">New trajectory\n")
                     for reward, observation, action, info in trajectory:
                         file.write("----------------------------------------------------------------------------------------------------\n")
                         file.write(f"{reward}\t{observation['msg']}\t{observation['hints']}\t{observation['ploc']}\t{observation['inv']}\t{action}\t{info}\n")
                         file.write("----------------------------------------------------------------------------------------------------\n")
                     file.write("\n")
-                    file.write(">New trajectory\n")
 
         # save to pickle file
         pickle_output_file = os.path.join(self.output_dir, f"{os.path.splitext(os.path.basename(self.game_file_path))[0]}.pkl")
